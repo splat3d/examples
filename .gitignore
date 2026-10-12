@@ -1,0 +1,16 @@
+# Models the examples download
+*.spz
+*.sog
+*.ply
+
+# Captures you run them on
+*.mp4
+*.mov
+*.zip
+
+# Keys and local tooling
+.env
+__pycache__/
+*.pyc
+node_modules/
+.DS_Store

@@ -1,0 +1,14 @@
+{
+  "name": "splat3d-quickstart",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Splat3D API quickstart for Node: a video or a zip of photos in, a 3D scene file out.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node quickstart.mjs"
+  }
+}

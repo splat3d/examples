@@ -1,0 +1,41 @@
+# Runs every example against the mock API (test/mock_api.py): no key, no network.
+# Oldest and newest supported runtimes, on Linux and on macOS, whose /bin/bash
+# is 3.2.
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        runtime:
+          - { python: "3.10", node: "22" }
+          - { python: "3.13", node: "24" }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.runtime.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.runtime.node }}
+
+      - name: Check jq
+        run: command -v jq || brew install jq
+
+      - name: Lint the curl example
+        if: runner.os == 'Linux'
+        run: shellcheck curl/quickstart.sh
+
+      # macOS runners put Homebrew's bash first on PATH: test the system 3.2.
+      - name: Test
+        run: python3 -m unittest discover -s test -v
+        env:
+          EXAMPLES_BASH: ${{ runner.os == 'macOS' && '/bin/bash' || '' }}
