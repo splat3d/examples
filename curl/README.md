@@ -24,8 +24,8 @@ RESPONSE=$(curl -sS -X POST "$API/v1/scenes" \
   -H "Authorization: Bearer $SPLAT3D_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"title": "My scene", "content_type": "video/mp4", "preset": "fast"}')
-SCENE_ID=$(echo "$RESPONSE" | jq -r .data.sceneId)
-UPLOAD_URL=$(echo "$RESPONSE" | jq -r .data.uploadUrl)
+SCENE_ID=$(echo "$RESPONSE" | jq -r .data.scene_id)
+UPLOAD_URL=$(echo "$RESPONSE" | jq -r .data.upload_url)
 
 # 2. Upload. Same Content-Type as step 1, and no API key.
 curl -sS -T "$FILE" -H "Content-Type: video/mp4" "$UPLOAD_URL"

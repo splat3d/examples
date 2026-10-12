@@ -200,8 +200,8 @@ create() {
     refuse
   fi
 
-  SCENE_ID=$(jq -r '.data.sceneId' "$BODY")
-  UPLOAD_URL=$(jq -r '.data.uploadUrl' "$BODY")
+  SCENE_ID=$(jq -r '.data.scene_id' "$BODY")
+  UPLOAD_URL=$(jq -r '.data.upload_url' "$BODY")
   log "created scene $SCENE_ID"
 }
 

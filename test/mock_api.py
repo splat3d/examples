@@ -2,14 +2,17 @@
 """A stand-in for the Splat3D API and its upload storage, for the tests.
 
 It answers the five calls the quickstarts make, checks each request the way
-the real service does, and logs every call so a test can count them:
+the real service (API 1.3.0) does, and logs every call so a test can count
+them:
 
-    POST /v1/scenes                    create  -> 201 {sceneId, uploadUrl}
+    POST /v1/scenes                    create  -> 201 {scene_id, id, upload_url}
     PUT  /upload/<id>                  storage -> 200 (the presigned upload)
-    POST /v1/scenes/<id>/process       launch  -> 200 {status: "processing"}
+    POST /v1/scenes/<id>/process       launch  -> 200 {status: "processing", scene_id, id}
     GET  /v1/scenes/<id>               poll    -> extracting_frames, training, complete
     GET  /v1/scenes/<id>/download      model   -> 200 bytes + X-Splat-Format
 
+Launch answers also carry the deprecated camelCase keys (sceneId, uploadUrl).
+Create and /process refuse a body key they don't take with 400 invalid_input.
 A scenario picks one deviation from that happy path (SCENARIOS below).
 
 Run it on its own to try an example without a key:
@@ -47,8 +50,8 @@ MODEL_BYTES = {
 LAUNCHED_STATUS = "extracting_frames"
 PROGRESSION = [
     {"status": LAUNCHED_STATUS, "processing_stage": LAUNCHED_STATUS, "processing_pct": 5},
-    {"status": "training", "processing_stage": "training", "processing_pct": 40, "preview_ready": True},
-    {"status": "complete", "processing_stage": None, "processing_pct": None, "preview_ready": True},
+    {"status": "training", "processing_stage": "training", "processing_pct": 40},
+    {"status": "complete", "processing_stage": None, "processing_pct": None},
 ]
 FAILED_STEP = {
     "status": "failed",
@@ -74,7 +77,24 @@ SCENARIOS = (
     "resume",                # the scene already exists, complete
     "resume_uploading",      # the scene already exists, uploaded but never launched
     "no_holdout",            # the scene completes with no held-out metrics, as the fast preset does
+    "snake_case_only",       # launch answers leave out the deprecated sceneId and uploadUrl
 )
+
+# The camelCase keys launch answers kept for older clients, deprecated in API
+# 1.3.0 beside scene_id and upload_url.
+DEPRECATED_LAUNCH_KEYS = ("sceneId", "uploadUrl")
+
+# The top-level keys each strict body takes. Any other answers 400
+# invalid_input, one {field, message} per key, e.g. {"presets": "ultra"}.
+CREATE_KEYS = frozenset({
+    "title", "address", "content_type", "file_size", "preset", "training_model", "training_tier",
+    "sfm", "training", "output", "enable_lod", "webhook_url", "webhook_secret",
+})
+PROCESS_KEYS = frozenset({"enable_lod", "arkit_poses", "lidar_points"})
+UNRECOGNIZED_KEY = "unrecognized key"
+
+# A body that isn't a JSON object, named as the API's schema error names it.
+JSON_TYPE_NAMES = {list: "array", str: "string", bool: "boolean", int: "number", float: "number", type(None): "null"}
 
 # A complete scene's metrics. Made up: tests only check they are printed.
 METRICS = {"ssim": 0.8765, "psnr_holdout": 12.34, "ssim_holdout": 0.5678}
@@ -202,7 +222,7 @@ class Handler(BaseHTTPRequestHandler):
             self._error(415, "invalid_input", "A request body must be JSON.")
             return
 
-        body = self._json_body(call)
+        body = self._strict_body(call, CREATE_KEYS)
         if body is None:
             return
 
@@ -220,7 +240,9 @@ class Handler(BaseHTTPRequestHandler):
         self.state.scenes[SCENE_ID] = Scene("uploading", content_type)
         port = self.server.server_address[1]
         upload_url = f"http://127.0.0.1:{port}/upload/{SCENE_ID}?X-Amz-Signature=mock"
-        self._json(201, {"data": {"sceneId": SCENE_ID, "uploadUrl": upload_url}})
+        data = {"scene_id": SCENE_ID, "id": SCENE_ID, "upload_url": upload_url,
+                "sceneId": SCENE_ID, "uploadUrl": upload_url}
+        self._json(201, {"data": self._launch_data(data)})
 
     def _upload(self, call: Call, scene_id: str) -> None:
         # The checks storage makes of a presigned PUT, plus the ones that keep a
@@ -250,7 +272,8 @@ class Handler(BaseHTTPRequestHandler):
         if call.body and not JSON_TYPE.match(content_type):
             self._error(415, "invalid_input", "A request body must be JSON.")
             return
-        if JSON_TYPE.match(content_type) and self._json_body(call) is None:
+        # An empty JSON body means {}, as no body does.
+        if call.body and JSON_TYPE.match(content_type) and self._strict_body(call, PROCESS_KEYS) is None:
             return
 
         scene = self.state.scenes.get(scene_id)
@@ -287,7 +310,9 @@ class Handler(BaseHTTPRequestHandler):
         # the launch was accepted.
         scene.launched = True
         scene.status = LAUNCHED_STATUS
-        self._json(200, {"data": {"status": "processing", "sceneId": scene_id, "message": "Processing started."}})
+        data = {"status": "processing", "scene_id": scene_id, "id": scene_id, "sceneId": scene_id,
+                "message": "Processing started."}
+        self._json(200, {"data": self._launch_data(data)})
 
     def _get(self, call: Call, scene_id: str) -> None:
         scene = self.state.scenes.get(scene_id)
@@ -341,7 +366,32 @@ class Handler(BaseHTTPRequestHandler):
             self._error(400, "invalid_input", "Malformed JSON in request body")
             return None
 
+    def _strict_body(self, call: Call, keys: frozenset[str]) -> dict | None:
+        """The parsed JSON object body. Malformed JSON, another JSON type or a key not in `keys` answers 400 and returns None."""
+        body = self._json_body(call)
+        if body is None:
+            return None
+
+        if not isinstance(body, dict):
+            problem = f"Expected object, received {JSON_TYPE_NAMES[type(body)]}"
+            self._error(400, "invalid_input", f"body: {problem}", details=[{"field": "body", "message": problem}])
+            return None
+
+        # One detail per unknown key, in the body's order, as the API lists them.
+        details = [{"field": key, "message": UNRECOGNIZED_KEY} for key in body if key not in keys]
+        if details:
+            message = "; ".join(f"{detail['field']}: {detail['message']}" for detail in details)
+            self._error(400, "invalid_input", message, details=details)
+            return None
+        return body
+
     # -- responses ---------------------------------------------------------
+
+    def _launch_data(self, data: dict) -> dict:
+        """A launch answer's data, without the deprecated camelCase keys in the snake_case_only scenario."""
+        if self.state.scenario != "snake_case_only":
+            return data
+        return {key: value for key, value in data.items() if key not in DEPRECATED_LAUNCH_KEYS}
 
     def _queue_full(self, retry_after: str) -> None:
         self._error(429, "queue_full",
@@ -387,7 +437,6 @@ def scene_detail(scene_id: str, step: dict, base_url: str) -> dict:
         "is_public": False,
         "thumbnail_r2_key": None,
         "thumbnail_url": None,
-        "preview_ready": step.get("preview_ready", False),
         "num_gaussians": 123456 if complete else None,
         "ssim": None,
         "psnr_holdout": None,

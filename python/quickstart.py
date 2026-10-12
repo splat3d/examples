@@ -212,8 +212,8 @@ def create(api: Api, file: Path, content_type: str, preset: str) -> tuple[str, s
             raise
         fail(err, "hint: create is not safe to repeat; check GET /v1/scenes for this scene before creating again")
 
-    log(f"created scene {data['sceneId']}")
-    return data["sceneId"], data["uploadUrl"]
+    log(f"created scene {data['scene_id']}")
+    return data["scene_id"], data["upload_url"]
 
 
 def upload(url: str, file: Path, content_type: str) -> None:
