@@ -23,9 +23,9 @@ and curl: https://github.com/splat3d/examples.
 ## The loop
 
 1. `POST /v1/scenes` with JSON `{"content_type": "video/mp4", "file_size": <bytes>, "preset": "standard"}`.
-   Answers `201` with `data.sceneId` and `data.uploadUrl` (camelCase; scene
-   fields everywhere else are snake_case).
-2. `PUT` the raw bytes to `uploadUrl` with `Content-Type` equal to the
+   Answers `201` with `data.scene_id` and `data.upload_url`. The camelCase
+   `sceneId` and `uploadUrl` are deprecated: don't read them.
+2. `PUT` the raw bytes to `upload_url` with `Content-Type` equal to the
    `content_type` from step 1 (the URL signs it). No `Authorization` header:
    the URL carries its own signature.
 3. `POST /v1/scenes/{id}/process` with body `{}` and `Content-Type:
@@ -74,7 +74,7 @@ async function call(path: string, init: RequestInit = {}) {
 }
 
 const file = await readFile("walkthrough.mp4");
-const { sceneId, uploadUrl } = await call("/scenes", {
+const { scene_id: sceneId, upload_url: uploadUrl } = await call("/scenes", {
   method: "POST",
   headers: asJson,
   body: JSON.stringify({ content_type: "video/mp4", file_size: file.byteLength, preset: "standard" }),
@@ -111,6 +111,10 @@ console.log(scene.viewer_url);
   result without charging again. A different body or key is `409 conflict`.
   After an uncertain answer (timeout, 503), repeat the same request or poll;
   never create a new scene to retry.
+- **Bodies are strict.** Create, `PATCH`, `/process` and `/retrain` answer
+  `400 invalid_input` for a key they don't take, e.g. `{"presets": "ultra"}`,
+  with `{field, message: "unrecognized key"}` in `details`. Nothing is
+  created or charged.
 - **Create and `/retrain` are not retry-safe.** Each request makes a new
   scene, and create spends the monthly `scenes_created` quota. Check
   `GET /v1/scenes` before sending one again.
@@ -140,9 +144,7 @@ console.log(scene.viewer_url);
   | 503 | `service_unavailable`, `internal_error` | Retry after `Retry-After` only if the header is there |
 
 - **`status` vs `processing_stage`.** `status` is the stored status, always
-  set: `uploading`; `extracting_frames` from the launch; for videos the
-  preview stages (`preview_extracting`, `preview_generating`,
-  `preview_compressing`) and back to `extracting_frames`; then
+  set: `uploading`; `extracting_frames` from the launch; then
   `estimating_poses`, `training`, `exporting`, `compressing`; then
   `complete`, `failed` or `cancelled`. A stage can repeat and more may be
   added: stop on the three terminal values only. `processing_stage` and
@@ -167,12 +169,13 @@ console.log(scene.viewer_url);
 - **Cancel and delete.** `POST /v1/scenes/{id}/cancel` stops a job. It
   refunds the launch only within 10 s of the job starting, which is about
   when `/process` returns (`data.refunded`, `data.refunded_credits`).
-  `DELETE /v1/scenes/{id}` removes the scene and its files (`204`, no
-  body), cancelling an unfinished one first under the same rule.
+  `DELETE /v1/scenes/{id}` answers `204`, no body; from then on the scene
+  answers `404`, and its files go 24 to 48 hours later. It cancels an
+  unfinished scene first under the same rule.
 - **Polling.** A `503` while polling is transient: keep going after its
-  `Retry-After`. Optional: `webhook_url` (and `webhook_secret`) at create
-  gets a POST on `complete` or `failed`, with up to 3 attempts; keep
-  polling as the backstop.
+  `Retry-After`. Optional: an `https://` `webhook_url` (and
+  `webhook_secret`) at create gets a POST on `complete` or `failed`, with
+  up to 3 attempts; keep polling as the backstop.
 - **Pagination.** `GET /v1/scenes?limit=1..100` (default 50). Pass
   `meta.next_cursor` back unchanged as `cursor`; `null` means the last page.
   It is opaque: never decode or build one.

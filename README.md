@@ -41,14 +41,14 @@ current directory and a link to view it on splat-3d.com.
 ```
   create ──> upload ──> process ──> poll ──> download
   POST       PUT        POST        GET      GET
-  /v1/scenes uploadUrl  /{id}/      /{id}    /{id}/download?format=spz
+  /v1/scenes upload_url /{id}/      /{id}    /{id}/download?format=spz
              (storage,  process     every    ──> scene-<id>.spz
              no key)                10 s
 ```
 
 1. **Create** a scene: `POST /v1/scenes` with the file's `content_type`, `file_size` and a `preset`.
-   The answer holds `sceneId` and `uploadUrl`, a presigned URL that lasts 24 hours.
-2. **Upload** the file with `PUT uploadUrl`. Send the same `Content-Type` you gave at create (the URL
+   The answer holds `scene_id` and `upload_url`, a presigned URL that lasts 24 hours.
+2. **Upload** the file with `PUT upload_url`. Send the same `Content-Type` you gave at create (the URL
    signs it) and a `Content-Length`. Send no API key: the URL is the credential.
 3. **Process**: `POST /v1/scenes/{id}/process` with the body `{}`. This charges the credits. Sending
    the same request again replays the first answer and charges nothing. Its `status` is always

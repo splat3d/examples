@@ -181,6 +181,15 @@ class Contract:
                 self.assertEqual(json.loads(self.calls("POST", CREATE)[0].body)["content_type"], content_type)
                 self.assertEqual(self.calls("PUT", UPLOAD)[0].headers["content-type"], content_type)
 
+    def test_reads_snake_case_keys(self) -> None:
+        # sceneId and uploadUrl are deprecated since API 1.3.0: run on scene_id and upload_url alone.
+        result = self.run_example("snake_case_only", str(self.capture), "--out", str(self.out))
+
+        self.assertExit(result, EXIT_OK)
+        self.assertIn(f"created scene {SCENE_ID}", result.stderr)
+        self.assertEqual(self.mock.count("PUT", UPLOAD), 1)
+        self.assertEqual((self.out / f"scene-{SCENE_ID}.spz").read_bytes(), MODEL_BYTES["spz"])
+
     # -- refusals and retries ------------------------------------------------
 
     def test_queue_full_waits(self) -> None:

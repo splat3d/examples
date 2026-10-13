@@ -227,7 +227,7 @@ async function create(api, file, contentType, preset) {
     fail(err, "hint: create is not safe to repeat; check GET /v1/scenes for this scene before creating again");
   }
 
-  log(`created scene ${data.sceneId}`);
+  log(`created scene ${data.scene_id}`);
   return data;
 }
 
@@ -361,8 +361,8 @@ async function run(api, args) {
   } else {
     const contentType = CONTENT_TYPES.get(extname(args.file).toLowerCase());
     const created = await create(api, args.file, contentType, args.preset);
-    sceneId = created.sceneId;
-    await upload(created.uploadUrl, args.file, contentType);
+    sceneId = created.scene_id;
+    await upload(created.upload_url, args.file, contentType);
     await start(api, sceneId, args);
   }
 
